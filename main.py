@@ -34,13 +34,14 @@ def parse_args():
     argparser.add_argument('--res_dir', default='results/res_', help='Results directory')
     argparser.add_argument('--debug_load', dest='debug_load', action='store_true', help='Load only a small subset of the data')
     argparser.add_argument('-vw', '--violation_weight', default=0, type=float, help="Weight with which constraint violation get added to the loss function")
+    argparser.add_argument('-eps', '--epsilon', default=1e-3, type=float, help="Bound below which negative values of violation contribute to loss function")
     argparser.set_defaults(debug_load=False, baseline=True, schedule=False)
 
     args = argparser.parse_args()
  
     return args
 
-def calculate_violation(divider, pmax_mat, Bmat, Amat):
+def calculate_violation(divider, pmax_mat, Bmat, Amat, eps):
     def _calculate_violation(ytrue, ypred):
         inputs=ytrue[:,divider:]
         ytrue = ytrue[:,:divider]
@@ -48,7 +49,7 @@ def calculate_violation(divider, pmax_mat, Bmat, Amat):
         ogen=output_to_gen(ypred, pmax_mat)
         angles=get_angles(ogen, inputs, Bmat)
         full_angles=tf.concat([tf.zeros((tf.shape(angles)[0],1), dtype=tf.dtypes.float64), angles], axis=1)
-        return K.max([-1e-3,K.max(tf.square(tf.matmul(Amat, tf.transpose(full_angles)))-1)])
+        return K.max([-eps,K.max(tf.square(tf.matmul(Amat, tf.transpose(full_angles)))-1)])
     return _calculate_violation
 
 def count_violation(gen, load, pmax_mat, Bmat, Amat):
@@ -63,9 +64,9 @@ def baseline_loss(divider):
         return K.mean(tf.abs(ytrue - ypred))
     return _baseline_loss
 
-def combined_loss(divider, pmax_mat, Bmat, Amat, violation_weight):
+def combined_loss(divider, pmax_mat, Bmat, Amat, violation_weight, eps):
     def _combined_loss(ytrue, ypred):
-        return baseline_loss(divider)(ytrue, ypred)+violation_weight*calculate_violation(divider, pmax_mat, Bmat, Amat)(ytrue, ypred)
+        return baseline_loss(divider)(ytrue, ypred)+violation_weight*calculate_violation(divider, pmax_mat, Bmat, Amat, eps)(ytrue, ypred)
     return _combined_loss
 
 def main():
@@ -73,11 +74,12 @@ def main():
     start_time = time.time()
     config = parse_args()
 
-    learning_rate   = config.learning_rate
-    num_epochs      = config.epochs
-    batch_size      = config.batch_size
-    l2_scale        = config.l2_scale
+    learning_rate    = config.learning_rate
+    num_epochs       = config.epochs
+    batch_size       = config.batch_size
+    l2_scale         = config.l2_scale
     violation_weight = config.violation_weight
+    eps              = config.epsilon
     if config.debug_load:
         print("Running in Debug mode (2 epochs)...")
         num_epochs = 2
@@ -128,7 +130,7 @@ def main():
 
     print("Preparing data for training...")
 
-    i_train, i_test, o_train, o_test = train_test_split(load, gen_full, test_size=0.1, random_state=42, shuffle=False)
+    i_train, i_test, o_train, o_test = train_test_split(load, gen_full, test_size=0.1, random_state=42)
 
     scales_train = gen_to_output(o_train, pmax_full, pmin_full)[:,1:]
     scales_test = gen_to_output(o_test, pmax_full, pmin_full)[:,1:]
@@ -148,7 +150,7 @@ def main():
     model.add(tf.keras.layers.Dense(units=16, activation='relu', kernel_regularizer=tf.keras.regularizers.L2(l2=l2_scale)))
     model.add(tf.keras.layers.Dense(units=output_train.shape[1], activation='sigmoid'))
     opt = tf.keras.optimizers.Adam(learning_rate=learning_rate)
-    model.compile(loss=combined_loss(divider, pmax_mat, Bmat, Amat, violation_weight=violation_weight), optimizer=opt, metrics=[baseline_loss(divider), calculate_violation(divider, pmax_mat, Bmat, Amat)])
+    model.compile(loss=combined_loss(divider, pmax_mat, Bmat, Amat, violation_weight, eps), optimizer=opt, metrics=[baseline_loss(divider), calculate_violation(divider, pmax_mat, Bmat, Amat, eps)])
     hist = model.fit(input_train, output_train, verbose=1, epochs=num_epochs, validation_split=0.05)
 
     print("Evaluating model...")
