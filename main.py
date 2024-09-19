@@ -51,6 +51,11 @@ def calculate_violation(divider, pmax_mat, Bmat, Amat):
         return K.max([-1e-3,K.max(tf.square(tf.matmul(Amat, tf.transpose(full_angles)))-1)])
     return _calculate_violation
 
+def count_violation(gen, load, pmax_mat, Bmat, Amat):
+    angles=get_angles(gen, load, Bmat)
+    full_angles=tf.concat([tf.zeros((tf.shape(angles)[0],1), dtype=tf.dtypes.float64), angles], axis=1)
+    return np.sum((tf.square(tf.matmul(Amat, tf.transpose(full_angles)))-1)>0)
+
 def baseline_loss(divider):
     def _baseline_loss(ytrue, ypred):
         ytrue = ytrue[:,:divider]
@@ -62,6 +67,7 @@ def combined_loss(divider, pmax_mat, Bmat, Amat, violation_weight):
     def _combined_loss(ytrue, ypred):
         return baseline_loss(divider)(ytrue, ypred)+violation_weight*calculate_violation(divider, pmax_mat, Bmat, Amat)(ytrue, ypred)
     return _combined_loss
+
 def main():
 
     start_time = time.time()
@@ -145,6 +151,15 @@ def main():
     model.compile(loss=combined_loss(divider, pmax_mat, Bmat, Amat, violation_weight=violation_weight), optimizer=opt, metrics=[baseline_loss(divider), calculate_violation(divider, pmax_mat, Bmat, Amat)])
     hist = model.fit(input_train, output_train, verbose=1, epochs=num_epochs, validation_split=0.05)
 
+    print("Evaluating model...")
+
+    predictions = model.predict(input_test)[:,:divider]
+    pred_gen = output_to_gen(predictions, pmax_mat)
+    num_violations = count_violation(pred_gen, i_test, pmax_mat, Bmat, Amat)
+    print("{}/{} Test cases were infeasible".format(num_violations, len(i_test)))
+
+    test_loss, test_baseline, test_violation = model.evaluate(input_test, output_test)
+
     print("Saving results")
 
     np.save('{}/train_loss.npy'.format(res_dir), hist.history["loss"])
@@ -153,6 +168,13 @@ def main():
     np.save('{}/val_baseline.npy'.format(res_dir), hist.history["val__baseline_loss"])
     np.save('{}/train_violation.npy'.format(res_dir), hist.history["_calculate_violation"])
     np.save('{}/val_violation.npy'.format(res_dir), hist.history["val__calculate_violation"])
+    np.save("{}/test_loss.npy".format(res_dir), test_loss)
+    np.save("{}/test_baseline.npy".format(res_dir), test_baseline)
+    np.save("{}/test_violation.npy".format(res_dir), test_violation)
+    np.save("{}/predicted_generation.npy".format(res_dir), pred_gen)
+    np.save("{}/load.npy".format(res_dir), i_test)
+    np.save("{}/true_generation.npy".format(res_dir), o_test)
+    
 
 
     end_time = time.time()-start_time
