@@ -33,7 +33,6 @@ def parse_args():
     argparser.add_argument('--data_dir', default='sample_data30.mat', help='Directory to take input data from')
     argparser.add_argument('--res_dir', default='results/res_', help='Results directory')
     argparser.add_argument('--debug_load', dest='debug_load', action='store_true', help='Load only a small subset of the data')
-    argparser.add_argument('--baseline', dest='baseline', action='store_true', help='Use a combined loss function for boosted training.')
     argparser.add_argument('-vw', '--violation_weight', default=0, type=float, help="Weight with which constraint violation get added to the loss function")
     argparser.set_defaults(debug_load=False, baseline=True, schedule=False)
 
@@ -77,6 +76,15 @@ def main():
         print("Running in Debug mode (2 epochs)...")
         num_epochs = 2
 
+    res_dir = config.res_dir
+
+    if not os.path.isdir(res_dir):
+        os.makedirs(res_dir)
+    f = open('{}/summary.txt'.format(config.res_dir), 'w')
+    f.write('##### Summary: #####\n\n')
+    f.write('### Hyperparameters: ###\n')
+    f.writelines('\n'.join(['Random Key: {}'.format(config.key), 'Learning Rate: {}'.format(learning_rate), 'Batch Size: {}'.format(batch_size), 'L2 Scale: {}'.format(l2_scale), 'Violation Weight: {}'.format(violation_weight)]))
+    f.close()
     print('Hyperparameters:\n Learning Rate: {}\n Number of Epochs: {}\n Batch Size: {}\n L2 Scale: {}\n'.format(learning_rate, num_epochs, batch_size, l2_scale))
 
     print("Loading Data...")
@@ -136,6 +144,19 @@ def main():
     opt = tf.keras.optimizers.Adam(learning_rate=learning_rate)
     model.compile(loss=combined_loss(divider, pmax_mat, Bmat, Amat, violation_weight=violation_weight), optimizer=opt, metrics=[baseline_loss(divider), calculate_violation(divider, pmax_mat, Bmat, Amat)])
     hist = model.fit(input_train, output_train, verbose=1, epochs=num_epochs, validation_split=0.05)
+
+    print("Saving results")
+
+    np.save('{}/train_loss.npy'.format(res_dir), hist.history["loss"])
+    np.save('{}/val_loss.npy'.format(res_dir), hist.history["val_loss"])
+    np.save('{}/train_baseline.npy'.format(res_dir), hist.history["_baseline_loss"])
+    np.save('{}/val_baseline.npy'.format(res_dir), hist.history["val__baseline_loss"])
+    np.save('{}/train_violation.npy'.format(res_dir), hist.history["_calculate_violation"])
+    np.save('{}/val_violation.npy'.format(res_dir), hist.history["val__calculate_violation"])
+
+
+    end_time = time.time()-start_time
+    print('Job finished: Total Time Required was {}:{}'.format(int(end_time/60), int(end_time%60)))
 
 if __name__ == '__main__':
     main()
