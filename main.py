@@ -152,8 +152,12 @@ def main():
     model.add(tf.keras.layers.Dense(units=32, activation='relu', kernel_regularizer=tf.keras.regularizers.L2(l2=l2_scale)))
     model.add(tf.keras.layers.Dense(units=output_train.shape[1], activation='sigmoid'))
     opt = tf.keras.optimizers.Adam(learning_rate=learning_rate)
+    model.compile(loss=combined_loss(divider, pmax_mat, Bmat, Amat, 0, eps), optimizer=opt, metrics=[baseline_loss(divider), calculate_violation(divider, pmax_mat, Bmat, Amat, eps)])
+    hist1 = model.fit(input_train, output_train, verbose=1, epochs=int(num_epochs/2), validation_split=0.05, batch_size=batch_size)
+    weights = model.get_weights()
     model.compile(loss=combined_loss(divider, pmax_mat, Bmat, Amat, violation_weight, eps), optimizer=opt, metrics=[baseline_loss(divider), calculate_violation(divider, pmax_mat, Bmat, Amat, eps)])
-    hist = model.fit(input_train, output_train, verbose=1, epochs=num_epochs, validation_split=0.05, batch_size=batch_size)
+    model.set_weights(weights)
+    hist2 = model.fit(input_train, output_train, verbose=1, epochs=int(num_epochs/2), validation_split=0.05, batch_size=batch_size)
 
     print("Evaluating model...")
 
