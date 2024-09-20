@@ -27,7 +27,7 @@ def parse_args():
     argparser.add_argument('-lr', '--learning_rate', default=0.001, type=float, help='The learning rate')
     argparser.add_argument('-e', '--epochs', default=200, type=int, help='The number of epochs to run')
     argparser.add_argument('-b', '--batch_size', default=64, type=int, help='Batch size to use')
-    argparser.add_argument('-l2', '--l2_scale', default=1e-3, type=int, help='Scale for L2 Regularization')
+    argparser.add_argument('-l2', '--l2_scale', default=1e-3, type=float, help='Scale for L2 Regularization')
     argparser.add_argument('-r', '--rate', default=0.0, type=float, help='Dropout Rate') #Maybe implement
     argparser.add_argument('--use_schedule', dest='schedule', action='store_true', help='Whether to use a schedule for the learning rate') #Maybe implement
     argparser.add_argument('--data_dir', default='sample_data30.mat', help='Directory to take input data from')
@@ -146,12 +146,14 @@ def main():
     tf.keras.backend.set_floatx('float64')
     model = tf.keras.Sequential()
     model.add(tf.keras.Input(shape=(input_train.shape[1],)))
-    model.add(tf.keras.layers.Dense(units=16, activation='relu', kernel_regularizer=tf.keras.regularizers.L2(l2=l2_scale)))
-    model.add(tf.keras.layers.Dense(units=16, activation='relu', kernel_regularizer=tf.keras.regularizers.L2(l2=l2_scale)))
+    model.add(tf.keras.layers.Dense(units=32, activation='relu', kernel_regularizer=tf.keras.regularizers.L2(l2=l2_scale)))
+    model.add(tf.keras.layers.Dense(units=32, activation='relu', kernel_regularizer=tf.keras.regularizers.L2(l2=l2_scale)))
+    model.add(tf.keras.layers.Dense(units=32, activation='relu', kernel_regularizer=tf.keras.regularizers.L2(l2=l2_scale)))
+    model.add(tf.keras.layers.Dense(units=32, activation='relu', kernel_regularizer=tf.keras.regularizers.L2(l2=l2_scale)))
     model.add(tf.keras.layers.Dense(units=output_train.shape[1], activation='sigmoid'))
     opt = tf.keras.optimizers.Adam(learning_rate=learning_rate)
     model.compile(loss=combined_loss(divider, pmax_mat, Bmat, Amat, violation_weight, eps), optimizer=opt, metrics=[baseline_loss(divider), calculate_violation(divider, pmax_mat, Bmat, Amat, eps)])
-    hist = model.fit(input_train, output_train, verbose=1, epochs=num_epochs, validation_split=0.05)
+    hist = model.fit(input_train, output_train, verbose=1, epochs=num_epochs, validation_split=0.05, batch_size=batch_size)
 
     print("Evaluating model...")
 
