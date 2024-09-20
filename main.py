@@ -156,7 +156,8 @@ def main():
     print("Evaluating model...")
 
     predictions = model.predict(input_test)[:,:divider]
-    pred_gen = output_to_gen(predictions, pmax_mat)
+    pred_gen = np.array(output_to_gen(predictions, pmax_mat))
+    pred_gen[:,0] = get_slack_bus_gen(pred_gen, i_test)
     num_violations = count_violation(pred_gen, i_test, pmax_mat, Bmat, Amat)
     print("{}/{} Test cases were infeasible".format(num_violations, len(i_test)))
 
