@@ -141,7 +141,7 @@ def main():
 
     print("Preparing data for training...")
 
-    i_train, i_test, o_train, o_test = train_test_split(load, gen_full, test_size=0.1, random_state=42)
+    i_train, i_test, o_train, o_test = train_test_split(load, gen_full, test_size=0.1, random_state=config.key)
 
     scales_train = gen_to_output(o_train, pmax_full, pmin_full)[:,1:]
     scales_test = gen_to_output(o_test, pmax_full, pmin_full)[:,1:]
