@@ -65,3 +65,6 @@ def fill_gen(gen, pmax):
     idx[0]=False #Keep slack bus at zero
     full_gen[:,idx]=gen.reshape(gen.shape[0],gen.shape[1])
     return full_gen
+
+def calculate_cost(gen, cost):
+    return tf.linalg.matmul(gen, cost)

@@ -112,6 +112,7 @@ def main():
     data = loadmat(i_dir)
 
     load=np.array(data["load_samples_full"])
+    cost=np.array(data["cost"])
     gen=np.array(data["generator_samples"])
     divider=gen.shape[1]-1
     gen_bus=np.array(data["generator_buses"])
@@ -142,6 +143,9 @@ def main():
     print("Preparing data for training...")
 
     i_train, i_test, o_train, o_test = train_test_split(load, gen_full, test_size=0.1, random_state=config.key)
+
+    train_cost = calculate_cost(np.delete(o_train, np.argwhere(np.all(o_train[..., :] == 0, axis=0)), axis=1), cost)
+    test_cost = calculate_cost(np.delete(o_test, np.argwhere(np.all(o_test[..., :] == 0, axis=0)), axis=1), cost)
 
     scales_train = gen_to_output(o_train, pmax_full, pmin_full)[:,1:]
     scales_test = gen_to_output(o_test, pmax_full, pmin_full)[:,1:]
