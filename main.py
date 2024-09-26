@@ -57,11 +57,22 @@ def count_violation(gen, load, pmax_mat, Bmat, Amat):
     full_angles=tf.concat([tf.zeros((tf.shape(angles)[0],1), dtype=tf.dtypes.float64), angles], axis=1)
     return np.sum((tf.square(tf.matmul(Amat, tf.transpose(full_angles)))-1)>0)
 
+def count_violation_metric(divider, pmax_mat, Bmat, Amat):
+    def _count_violation(ytrue, ypred):
+        inputs=ytrue[:,divider:]
+        ytrue = ytrue[:,:divider]
+        ypred = ypred[:,:divider]
+        ogen=output_to_gen(ypred, pmax_mat)
+        angles=get_angles(ogen, inputs, Bmat)
+        full_angles=tf.concat([tf.zeros((tf.shape(angles)[0],1), dtype=tf.dtypes.float64), angles], axis=1)
+        return K.sum(tf.where((tf.square(tf.matmul(Amat, tf.transpose(full_angles)))-1)>0, 1, 0))
+    return _count_violation
+
 def baseline_loss(divider):
     def _baseline_loss(ytrue, ypred):
         ytrue = ytrue[:,:divider]
         ypred = ypred[:,:divider]
-        return K.mean(tf.abs(ytrue - ypred))
+        return K.mean(tf.divide(tf.abs(ytrue - ypred),ytrue))
     return _baseline_loss
 
 def combined_loss(divider, pmax_mat, Bmat, Amat, violation_weight, eps):
@@ -148,11 +159,9 @@ def main():
     model.add(tf.keras.Input(shape=(input_train.shape[1],)))
     model.add(tf.keras.layers.Dense(units=32, activation='relu', kernel_regularizer=tf.keras.regularizers.L2(l2=l2_scale)))
     model.add(tf.keras.layers.Dense(units=32, activation='relu', kernel_regularizer=tf.keras.regularizers.L2(l2=l2_scale)))
-    model.add(tf.keras.layers.Dense(units=32, activation='relu', kernel_regularizer=tf.keras.regularizers.L2(l2=l2_scale)))
-    model.add(tf.keras.layers.Dense(units=32, activation='relu', kernel_regularizer=tf.keras.regularizers.L2(l2=l2_scale)))
     model.add(tf.keras.layers.Dense(units=output_train.shape[1], activation='sigmoid'))
     opt = tf.keras.optimizers.Adam(learning_rate=learning_rate)
-    model.compile(loss=combined_loss(divider, pmax_mat, Bmat, Amat, violation_weight, eps), optimizer=opt, metrics=[baseline_loss(divider), calculate_violation(divider, pmax_mat, Bmat, Amat, eps)])
+    model.compile(loss=combined_loss(divider, pmax_mat, Bmat, Amat, violation_weight, eps), optimizer=opt, metrics=[baseline_loss(divider), calculate_violation(divider, pmax_mat, Bmat, Amat, eps), count_violation_metric(divider, pmax_mat, Bmat, Amat)])
     hist = model.fit(input_train, output_train, verbose=1, epochs=num_epochs, validation_split=0.05, batch_size=batch_size)
 
     print("Evaluating model...")
@@ -163,7 +172,7 @@ def main():
     num_violations = count_violation(pred_gen, i_test, pmax_mat, Bmat, Amat)
     print("{}/{} Test cases were infeasible".format(num_violations, len(i_test)))
 
-    test_loss, test_baseline, test_violation = model.evaluate(input_test, output_test)
+    test_loss, test_baseline, test_max_violation, test_count_violation = model.evaluate(input_test, output_test)
 
     print("Saving results")
 
@@ -171,11 +180,14 @@ def main():
     np.save('{}/val_loss.npy'.format(res_dir), hist.history["val_loss"])
     np.save('{}/train_baseline.npy'.format(res_dir), hist.history["_baseline_loss"])
     np.save('{}/val_baseline.npy'.format(res_dir), hist.history["val__baseline_loss"])
-    np.save('{}/train_violation.npy'.format(res_dir), hist.history["_calculate_violation"])
-    np.save('{}/val_violation.npy'.format(res_dir), hist.history["val__calculate_violation"])
+    np.save('{}/train_max_violation.npy'.format(res_dir), hist.history["_calculate_violation"])
+    np.save('{}/val_max_violation.npy'.format(res_dir), hist.history["val__calculate_violation"])
+    np.save('{}/train_count_violation.npy'.format(res_dir), hist.history["_count_violation"])
+    np.save('{}/val_count_violation.npy'.format(res_dir), hist.history["val__count_violation"])
     np.save("{}/test_loss.npy".format(res_dir), test_loss)
     np.save("{}/test_baseline.npy".format(res_dir), test_baseline)
-    np.save("{}/test_violation.npy".format(res_dir), test_violation)
+    np.save("{}/test_max_violation.npy".format(res_dir), test_max_violation)
+    np.save("{}/test_count_violation.npy".format(res_dir), test_count_violation)
     np.save("{}/predicted_generation.npy".format(res_dir), pred_gen)
     np.save("{}/load.npy".format(res_dir), i_test)
     np.save("{}/true_generation.npy".format(res_dir), o_test)
