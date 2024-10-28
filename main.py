@@ -77,7 +77,7 @@ def baseline_loss(divider):
 
 def combined_loss(divider, pmax_mat, Bmat, Amat, violation_weight, eps):
     def _combined_loss(ytrue, ypred):
-        return baseline_loss(divider)(ytrue, ypred)+violation_weight*calculate_violation(divider, pmax_mat, Bmat, Amat, eps)(ytrue, ypred)
+        return (1-violation_weight)*baseline_loss(divider)(ytrue, ypred)+violation_weight*calculate_violation(divider, pmax_mat, Bmat, Amat, eps)(ytrue, ypred)
     return _combined_loss
 
 def main():
@@ -173,6 +173,7 @@ def main():
     predictions = model.predict(input_test)[:,:divider]
     pred_gen = np.array(output_to_gen(predictions, pmax_mat))
     pred_gen[:,0] = get_slack_bus_gen(pred_gen, i_test)
+    pred_cost=calculate_cost(np.delete(pred_gen, np.argwhere(np.all(pred_gen[..., :] == 0, axis=0)), axis=1), cost)
     num_violations = count_violation(pred_gen, i_test, pmax_mat, Bmat, Amat)
     print("{}/{} Test cases were infeasible".format(num_violations, len(i_test)))
 
@@ -195,6 +196,8 @@ def main():
     np.save("{}/predicted_generation.npy".format(res_dir), pred_gen)
     np.save("{}/load.npy".format(res_dir), i_test)
     np.save("{}/true_generation.npy".format(res_dir), o_test)
+    np.save("{}/pred_cost.npy".format(res_dir), pred_cost)
+    np.save("{}/true_cost.npy".format(res_dir), test_cost)
     
 
 
