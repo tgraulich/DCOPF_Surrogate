@@ -42,8 +42,12 @@ def parse_args():
  
     return args
 
-def baseline_loss(ytrue, ypred):
-    return K.mean(tf.divide(tf.abs(ytrue - ypred),ytrue))
+def baseline_loss(divider):
+    def _baseline_loss(ytrue, ypred):
+        ytrue = ytrue[:,:divider]
+        ypred = ypred[:,:divider]
+        return K.mean(tf.divide(tf.abs(ytrue - ypred),ytrue))
+    return _baseline_loss
 
 def cost_metric(cost):
     def _cost_metric(ytrue, ypred):
@@ -88,6 +92,7 @@ def main():
     load=np.array(data["load_samples_full"])
     cost=np.array(data["cost"])
     gen=np.array(data["generator_samples"])
+    divider = gen.shape[1]-1
     pmin=np.array(data["pmin"])
     pmax=np.array(data["pmax"])
     base_load=np.array(data["load"])
@@ -129,7 +134,7 @@ def main():
     model.add(tf.keras.layers.Dense(units=128, activation='relu', kernel_regularizer=tf.keras.regularizers.L2(l2=l2_scale)))
     model.add(tf.keras.layers.Dense(units=output_train.shape[1], activation='sigmoid'))
     opt = tf.keras.optimizers.Adam(learning_rate=learning_rate)
-    model.compile(loss="MAE", optimizer=opt, metrics=["MAE"])
+    model.compile(loss=baseline_loss(divider), optimizer=opt)
     hist = model.fit(input_train, output_train, verbose=1, epochs=num_epochs, validation_split=0.05, batch_size=batch_size)
 
     print("Evaluating model...")
