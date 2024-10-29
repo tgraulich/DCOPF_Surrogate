@@ -49,11 +49,18 @@ def baseline_loss(divider):
         return K.mean(tf.divide(tf.abs(ytrue - ypred),ytrue))
     return _baseline_loss
 
-def cost_metric(cost):
+def cost_metric(cost, divider, pmax, pmin):
     def _cost_metric(ytrue, ypred):
-        true_cost= calculate_cost(ytrue, cost)
-        pred_cost = calculate_cost(ypred, cost)
-        return tf.keras.losses.MeanAbsoluteError(true_cost, pred_cost)
+        true_scale = ytrue[:,:divider]
+        pred_scale = ypred[:,:divider]
+        load = ytrue[:,divider:]
+        true_gen = scale_to_gen(true_scale, pmax[1:], pmin[1:])
+        pred_gen = scale_to_gen(pred_scale, pmax[1:], pmin[1:])
+        true_gen = get_slack_bus_gen(true_gen, load)
+        pred_gen = get_slack_bus_gen(pred_gen, load)
+        true_cost= calculate_cost(true_gen, cost)
+        pred_cost = calculate_cost(pred_gen, cost)
+        return K.mean(pred_cost-true_cost)
     return _cost_metric
 
 def main():
@@ -134,14 +141,14 @@ def main():
     model.add(tf.keras.layers.Dense(units=128, activation='relu', kernel_regularizer=tf.keras.regularizers.L2(l2=l2_scale)))
     model.add(tf.keras.layers.Dense(units=output_train.shape[1], activation='sigmoid'))
     opt = tf.keras.optimizers.Adam(learning_rate=learning_rate)
-    model.compile(loss=baseline_loss(divider), optimizer=opt)
+    model.compile(loss=baseline_loss(divider), optimizer=opt, metrics=[cost_metric(cost, divider, pmax, pmin)])
     hist = model.fit(input_train, output_train, verbose=1, epochs=num_epochs, validation_split=0.05, batch_size=batch_size)
 
     print("Evaluating model...")
 
-    predictions = np.append(np.zeros((len(input_test),1)), model.predict(input_test), axis=1)
-    pred_gen = np.array(scale_to_gen(predictions, pmax, pmin))
-    pred_gen[:,0] = get_slack_bus_gen(pred_gen, i_test)
+    predictions = model.predict(input_test)[:,:divider]
+    pred_gen = np.array(scale_to_gen(predictions, pmax[1:], pmin[1:]))
+    pred_gen = get_slack_bus_gen(pred_gen, i_test)
     pred_cost=calculate_cost(pred_gen, cost)
 
     #print(true_cost-test_cost)
@@ -149,14 +156,14 @@ def main():
     #num_violations = count_violation(pred_gen, i_test, pmax_mat, Bmat, Amat)
     #print("{}/{} Test cases were infeasible".format(num_violations, len(i_test)))
 
-    test_loss, test_mae = model.evaluate(input_test, output_test)
+    test_loss = model.evaluate(input_test, output_test)
 
     print("Saving results")
 
     np.save('{}/train_loss.npy'.format(res_dir), hist.history["loss"])
     np.save('{}/val_loss.npy'.format(res_dir), hist.history["val_loss"])
     np.save("{}/test_loss.npy".format(res_dir), test_loss)
-    np.save("{}/test_mae.npy".format(res_dir), test_mae)
+    #np.save("{}/test_mae.npy".format(res_dir), test_mae)
     np.save("{}/predicted_generation.npy".format(res_dir), pred_gen)
     np.save("{}/load.npy".format(res_dir), i_test)
     np.save("{}/true_generation.npy".format(res_dir), o_test)

@@ -6,7 +6,7 @@ def gen_to_scale(gen, pmax, pmin):
     return np.divide(np.subtract(gen,pmin.T),(pmax-pmin).T)
 
 def scale_to_gen(scale, pmax, pmin):
-    return np.multiply(scale,(pmax-pmin).reshape(len(pmin)))+pmin.reshape(len(pmin))
+    return tf.math.multiply(scale,(pmax-pmin).reshape(len(pmin)))+pmin.reshape(len(pmin))
 
 def load_to_scale(load, base_load, x):
     return (np.divide(load,base_load.T)-1+x)/(2*x)
@@ -15,7 +15,8 @@ def scale_to_load(scale, base_load, x):
     return base_load*(scale*2*x+1-x)
 
 def get_slack_bus_gen(gen, load):
-    return np.sum(load, axis=1)-np.sum(gen, axis=1)
+    slack = (tf.reduce_sum(load, axis=1, keepdims=True)-tf.reduce_sum(gen, axis=1, keepdims=True))
+    return tf.concat([slack, gen], axis=1)
 
 def load_to_input(load, base_load, x):
     active_load = np.delete(load, np.argwhere(np.all(load[..., :] == 0, axis=0)), axis=1)
