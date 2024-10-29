@@ -45,13 +45,11 @@ def parse_args():
 def baseline_loss(ytrue, ypred):
     return K.mean(tf.divide(tf.abs(ytrue - ypred),ytrue))
 
-def cost_metric(cost, divider):
+def cost_metric(cost):
     def _cost_metric(ytrue, ypred):
-        gen_true = ytrue[:,:divider]
-        gen_pred = ypred[:,:divider]
-        true_cost= calculate_cost(gen_true, cost)
-        pred_cost = calculate_cost(gen_pred, cost)
-        return K.mean(pred_cost-true_cost)
+        true_cost= calculate_cost(ytrue, cost)
+        pred_cost = calculate_cost(ypred, cost)
+        return tf.keras.losses.MeanAbsoluteError(true_cost, pred_cost)
     return _cost_metric
 
 def main():
@@ -65,11 +63,13 @@ def main():
     l2_scale         = config.l2_scale
     violation_weight = config.violation_weight
     eps              = config.epsilon
+    res_dir = config.res_dir
     if config.debug_load:
         print("Running in Debug mode (2 epochs)...")
         num_epochs = 2
+        res_dir="results/res_"
 
-    res_dir = config.res_dir
+
 
     if not os.path.isdir(res_dir):
         os.makedirs(res_dir)
@@ -132,7 +132,6 @@ def main():
     print("Evaluating model...")
 
     predictions = np.append(np.zeros((len(input_test),1)), model.predict(input_test), axis=1)
-    print(predictions.shape)
     pred_gen = np.array(scale_to_gen(predictions, pmax, pmin))
     pred_gen[:,0] = get_slack_bus_gen(pred_gen, i_test)
     pred_cost=calculate_cost(pred_gen, cost)
