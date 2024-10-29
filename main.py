@@ -68,8 +68,8 @@ def slack_bus_violation(divider, pmax, pmin):
         pred_scale = ypred[:,:divider]
         load = ytrue[:,divider:]
         pred_gen = scale_to_gen(pred_scale, pmax[1:], pmin[1:])
-        return tf.minimum(0, tf.subtract(get_slack_bus_gen2(pred_gen, load), pmax[0]))
-
+        return K.max(K.max([0, get_slack_bus_gen2(pred_gen, load)- pmax[0]]))
+    return _slack_bus_violation
 def main():
 
     start_time = time.time()
@@ -148,9 +148,8 @@ def main():
     model.add(tf.keras.layers.Dense(units=128, activation='relu', kernel_regularizer=tf.keras.regularizers.L2(l2=l2_scale)))
     model.add(tf.keras.layers.Dense(units=output_train.shape[1], activation='sigmoid'))
     opt = tf.keras.optimizers.Adam(learning_rate=learning_rate)
-    model.compile(loss=cost_metric(cost, divider, pmax, pmin), optimizer=opt, metrics=[cost_metric(cost, divider, pmax, pmin)])
+    model.compile(loss=cost_metric(cost, divider, pmax, pmin), optimizer=opt, metrics=[cost_metric(cost, divider, pmax, pmin), slack_bus_violation(divider, pmax, pmin)])
     hist = model.fit(input_train, output_train, verbose=1, epochs=num_epochs, validation_split=0.05, batch_size=batch_size)
-
     print("Evaluating model...")
 
     predictions = model.predict(input_test)[:,:divider]
