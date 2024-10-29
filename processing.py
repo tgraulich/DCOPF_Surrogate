@@ -1,11 +1,12 @@
 import numpy as np
 import tensorflow as tf
+from copy import copy
 
 def gen_to_scale(gen, pmax, pmin):
     return np.divide(np.subtract(gen,pmin.T),(pmax-pmin).T)
 
 def scale_to_gen(scale, pmax, pmin):
-    return scale*(pmax-pmin)+pmin
+    return np.multiply(scale,(pmax-pmin).reshape(len(pmin)))+pmin.reshape(len(pmin))
 
 def load_to_scale(load, base_load, x):
     return (np.divide(load,base_load.T)-1+x)/(2*x)
@@ -67,6 +68,7 @@ def fill_gen(gen, pmax):
     return full_gen
 
 def calculate_cost(gen, cost):
+    cost = copy(cost)
     cost[:,0]=np.sqrt(cost[:,0])
     total_cost=np.matmul(gen, cost)
     total_cost[:,0]=np.square(total_cost[:,0])

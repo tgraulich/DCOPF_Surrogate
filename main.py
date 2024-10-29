@@ -16,6 +16,7 @@ from sklearn.model_selection import train_test_split
 from processing import *
 import tensorflow as tf
 import tensorflow.keras.backend as K
+import matplotlib.pyplot as plt
 
 def parse_args():
     """
@@ -41,44 +42,17 @@ def parse_args():
  
     return args
 
-def calculate_violation(divider, pmax_mat, Bmat, Amat, eps):
-    def _calculate_violation(ytrue, ypred):
-        inputs=ytrue[:,divider:]
-        ytrue = ytrue[:,:divider]
-        ypred = ypred[:,:divider]
-        ogen=output_to_gen(ypred, pmax_mat)
-        angles=get_angles(ogen, inputs, Bmat)
-        full_angles=tf.concat([tf.zeros((tf.shape(angles)[0],1), dtype=tf.dtypes.float64), angles], axis=1)
-        return K.max([-eps,K.max(tf.square(tf.matmul(Amat, tf.transpose(full_angles)))-1)])
-    return _calculate_violation
+def baseline_loss(ytrue, ypred):
+    return K.mean(tf.divide(tf.abs(ytrue - ypred),ytrue))
 
-def count_violation(gen, load, pmax_mat, Bmat, Amat):
-    angles=get_angles(gen, load, Bmat)
-    full_angles=tf.concat([tf.zeros((tf.shape(angles)[0],1), dtype=tf.dtypes.float64), angles], axis=1)
-    return np.sum((tf.square(tf.matmul(Amat, tf.transpose(full_angles)))-1)>0)
-
-def count_violation_metric(divider, pmax_mat, Bmat, Amat):
-    def _count_violation(ytrue, ypred):
-        inputs=ytrue[:,divider:]
-        ytrue = ytrue[:,:divider]
-        ypred = ypred[:,:divider]
-        ogen=output_to_gen(ypred, pmax_mat)
-        angles=get_angles(ogen, inputs, Bmat)
-        full_angles=tf.concat([tf.zeros((tf.shape(angles)[0],1), dtype=tf.dtypes.float64), angles], axis=1)
-        return K.sum(tf.where((tf.square(tf.matmul(Amat, tf.transpose(full_angles)))-1)>0, 1, 0))
-    return _count_violation
-
-def baseline_loss(divider):
-    def _baseline_loss(ytrue, ypred):
-        ytrue = ytrue[:,:divider]
-        ypred = ypred[:,:divider]
-        return K.mean(tf.divide(tf.abs(ytrue - ypred),ytrue))
-    return _baseline_loss
-
-def combined_loss(divider, pmax_mat, Bmat, Amat, violation_weight, eps):
-    def _combined_loss(ytrue, ypred):
-        return (1-violation_weight)*baseline_loss(divider)(ytrue, ypred)#+violation_weight*calculate_violation(divider, pmax_mat, Bmat, Amat, eps)(ytrue, ypred)
-    return _combined_loss
+def cost_metric(cost, divider):
+    def _cost_metric(ytrue, ypred):
+        gen_true = ytrue[:,:divider]
+        gen_pred = ypred[:,:divider]
+        true_cost= calculate_cost(gen_true, cost)
+        pred_cost = calculate_cost(gen_pred, cost)
+        return K.mean(pred_cost-true_cost)
+    return _cost_metric
 
 def main():
 
@@ -116,23 +90,13 @@ def main():
     gen=np.array(data["generator_samples"])
     divider=gen.shape[1]-1
     gen_bus=np.array(data["generator_buses"])
-    gen_full=np.zeros(load.shape)
-    gen_full[:,gen_bus-1]=gen.reshape(gen.shape[0],gen.shape[1],1)
-    gen=gen_full
     pmin=np.array(data["pmin"])
     pmax=np.array(data["pmax"])
-    pmin_full=np.zeros(load.shape[1])
-    pmin_full[gen_bus-1]=pmin
-    pmin=pmin_full
-    pmax_full=np.zeros(load.shape[1])
-    pmax_full[gen_bus-1]=pmax
-    #pmax=pmax_full
     gen_bus_mat=np.zeros((len(pmax), len(pmax_full)))
     for i in range(len(gen_bus)):
         gen_bus_mat[i,gen_bus[i]-1]=1
     pmax_mat=np.matmul(np.diag(pmax[:,0]), gen_bus_mat)[1:,:]
     base_load=np.array(data["load"])
-    #outputs=gen_to_output(gen_full, pmax_full, pmin_full)[:,1:]
 
     Bmat=np.array(data["Bbus"])
     Amat=np.array(data["Amat"])
@@ -140,59 +104,62 @@ def main():
     voltage_angles=np.subtract(voltage_angles,voltage_angles[:,0].T.reshape(len(voltage_angles),1))
     x= data["sampling_range"]
 
+    fig, axs = plt.subplots(2,3, figsize=(10,7))
+    axs = axs.flatten()
+    for i, ax in enumerate(axs):
+        ax.hist(gen[:,i], bins=20, histtype="step", label="Pred", linestyle="--", color="red")
+
+    fig.savefig("{}/generators.png".format(res_dir))
+
     print("Preparing data for training...")
 
-    i_train, i_test, o_train, o_test = train_test_split(load, gen_full, test_size=0.1, random_state=config.key)
+    i_train, i_test, o_train, o_test = train_test_split(load, gen, test_size=0.1, random_state=config.key)
 
     train_cost = calculate_cost(np.delete(o_train, np.argwhere(np.all(o_train[..., :] == 0, axis=0)), axis=1), cost)
     test_cost = calculate_cost(np.delete(o_test, np.argwhere(np.all(o_test[..., :] == 0, axis=0)), axis=1), cost)
 
-    scales_train = gen_to_output(o_train, pmax_full, pmin_full)[:,1:]
-    scales_test = gen_to_output(o_test, pmax_full, pmin_full)[:,1:]
-
-    output_train=np.append(scales_train, i_train, axis=1)
-    output_test=np.append(scales_test, i_test, axis=1)
+    output_train = gen_to_scale(o_train, pmax, pmin)[:,1:]
+    output_test = gen_to_scale(o_test, pmax, pmin)[:,1:]
 
     input_train = load_to_input(i_train, base_load, x)
     input_test = load_to_input(i_test, base_load, x)
+    
+    print("Input shape: {}, Output shape: {}".format(input_train.shape, output_train.shape))
 
     print("Starting training...")
 
     tf.keras.backend.set_floatx('float64')
     model = tf.keras.Sequential()
     model.add(tf.keras.Input(shape=(input_train.shape[1],)))
-    model.add(tf.keras.layers.Dense(units=32, activation='relu', kernel_regularizer=tf.keras.regularizers.L2(l2=l2_scale)))
-    model.add(tf.keras.layers.Dense(units=32, activation='relu', kernel_regularizer=tf.keras.regularizers.L2(l2=l2_scale)))
+    model.add(tf.keras.layers.Dense(units=128, activation='relu', kernel_regularizer=tf.keras.regularizers.L2(l2=l2_scale)))
+    model.add(tf.keras.layers.Dense(units=128, activation='relu', kernel_regularizer=tf.keras.regularizers.L2(l2=l2_scale)))
+    model.add(tf.keras.layers.Dense(units=128, activation='relu', kernel_regularizer=tf.keras.regularizers.L2(l2=l2_scale)))
     model.add(tf.keras.layers.Dense(units=output_train.shape[1], activation='sigmoid'))
     opt = tf.keras.optimizers.Adam(learning_rate=learning_rate)
-    model.compile(loss=combined_loss(divider, pmax_mat, Bmat, None, violation_weight, eps), optimizer=opt, metrics=[baseline_loss(divider)])
+    model.compile(loss="MAE", optimizer=opt, metrics=["MAE"])
     hist = model.fit(input_train, output_train, verbose=1, epochs=num_epochs, validation_split=0.05, batch_size=batch_size)
 
     print("Evaluating model...")
 
-    predictions = model.predict(input_test)[:,:divider]
-    pred_gen = np.array(output_to_gen(predictions, pmax_mat))
+    predictions = np.append(np.zeros((len(input_test),1)), model.predict(input_test), axis=1)
+    print(predictions.shape)
+    pred_gen = np.array(scale_to_gen(predictions, pmax, pmin))
     pred_gen[:,0] = get_slack_bus_gen(pred_gen, i_test)
-    pred_cost=calculate_cost(np.delete(pred_gen, np.argwhere(np.all(pred_gen[..., :] == 0, axis=0)), axis=1), cost)
+    pred_cost=calculate_cost(pred_gen, cost)
+
+    #print(true_cost-test_cost)
+    #print(cost)
     #num_violations = count_violation(pred_gen, i_test, pmax_mat, Bmat, Amat)
     #print("{}/{} Test cases were infeasible".format(num_violations, len(i_test)))
 
-    test_loss, test_baseline = model.evaluate(input_test, output_test)
+    test_loss, test_mae = model.evaluate(input_test, output_test)
 
     print("Saving results")
 
     np.save('{}/train_loss.npy'.format(res_dir), hist.history["loss"])
     np.save('{}/val_loss.npy'.format(res_dir), hist.history["val_loss"])
-    np.save('{}/train_baseline.npy'.format(res_dir), hist.history["_baseline_loss"])
-    np.save('{}/val_baseline.npy'.format(res_dir), hist.history["val__baseline_loss"])
-    #np.save('{}/train_max_violation.npy'.format(res_dir), hist.history["_calculate_violation"])
-    #np.save('{}/val_max_violation.npy'.format(res_dir), hist.history["val__calculate_violation"])
-    #np.save('{}/train_count_violation.npy'.format(res_dir), hist.history["_count_violation"])
-    #np.save('{}/val_count_violation.npy'.format(res_dir), hist.history["val__count_violation"])
     np.save("{}/test_loss.npy".format(res_dir), test_loss)
-    np.save("{}/test_baseline.npy".format(res_dir), test_baseline)
-    #np.save("{}/test_max_violation.npy".format(res_dir), test_max_violation)
-    #np.save("{}/test_count_violation.npy".format(res_dir), test_count_violation)
+    np.save("{}/test_mae.npy".format(res_dir), test_mae)
     np.save("{}/predicted_generation.npy".format(res_dir), pred_gen)
     np.save("{}/load.npy".format(res_dir), i_test)
     np.save("{}/true_generation.npy".format(res_dir), o_test)
