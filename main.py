@@ -88,20 +88,10 @@ def main():
     load=np.array(data["load_samples_full"])
     cost=np.array(data["cost"])
     gen=np.array(data["generator_samples"])
-    divider=gen.shape[1]-1
-    gen_bus=np.array(data["generator_buses"])
     pmin=np.array(data["pmin"])
     pmax=np.array(data["pmax"])
-    gen_bus_mat=np.zeros((len(pmax), len(pmax_full)))
-    for i in range(len(gen_bus)):
-        gen_bus_mat[i,gen_bus[i]-1]=1
-    pmax_mat=np.matmul(np.diag(pmax[:,0]), gen_bus_mat)[1:,:]
     base_load=np.array(data["load"])
 
-    Bmat=np.array(data["Bbus"])
-    Amat=np.array(data["Amat"])
-    voltage_angles=np.array(data["voltages_angles"])*np.pi/1.8
-    voltage_angles=np.subtract(voltage_angles,voltage_angles[:,0].T.reshape(len(voltage_angles),1))
     x= data["sampling_range"]
 
     fig, axs = plt.subplots(2,3, figsize=(10,7))
@@ -115,8 +105,8 @@ def main():
 
     i_train, i_test, o_train, o_test = train_test_split(load, gen, test_size=0.1, random_state=config.key)
 
-    train_cost = calculate_cost(np.delete(o_train, np.argwhere(np.all(o_train[..., :] == 0, axis=0)), axis=1), cost)
-    test_cost = calculate_cost(np.delete(o_test, np.argwhere(np.all(o_test[..., :] == 0, axis=0)), axis=1), cost)
+    train_cost = calculate_cost(o_train, cost)
+    test_cost = calculate_cost(o_test, cost)
 
     output_train = gen_to_scale(o_train, pmax, pmin)[:,1:]
     output_test = gen_to_scale(o_test, pmax, pmin)[:,1:]

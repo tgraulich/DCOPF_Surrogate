@@ -68,14 +68,10 @@ def fill_gen(gen, pmax):
     return full_gen
 
 def calculate_cost(gen, cost):
-    cost = copy(cost)
-    cost[:,0]=np.sqrt(cost[:,0])
-    total_cost=np.matmul(gen, cost)
-    total_cost[:,0]=np.square(total_cost[:,0])
-    return np.sum(total_cost, axis=1)
-    '''
-    cost[:,0]=tf.sqrt(cost[:,0])
-    first_order = tf.linalg.matmul(gen, cost)[:,1]
-    second_order = tf.square(tf.linalg.matmul(gen, cost)[:,0])
-    total = tf.concat([first_order, second_order], axis=1)
-    return tf.reduce_sum(total, axis=1)'''
+    
+    c1=cost[:,0].reshape(len(cost),1)
+    c0=cost[:,1].reshape(len(cost),1)
+    gen2 = tf.square(gen)
+
+    total_cost=tf.matmul(gen2, c1)+tf.matmul(gen, c0)
+    return total_cost
