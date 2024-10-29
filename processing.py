@@ -17,6 +17,9 @@ def scale_to_load(scale, base_load, x):
 def get_slack_bus_gen(gen, load):
     slack = (tf.reduce_sum(load, axis=1, keepdims=True)-tf.reduce_sum(gen, axis=1, keepdims=True))
     return tf.concat([slack, gen], axis=1)
+def get_slack_bus_gen2(gen, load):
+    slack = (tf.reduce_sum(load, axis=1)-tf.reduce_sum(gen, axis=1))
+    return slack
 
 def load_to_input(load, base_load, x):
     active_load = np.delete(load, np.argwhere(np.all(load[..., :] == 0, axis=0)), axis=1)
