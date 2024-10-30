@@ -34,7 +34,7 @@ def parse_args():
     argparser.add_argument('--data_dir', default='sample_data30.mat', help='Directory to take input data from')
     argparser.add_argument('--res_dir', default='results/res_', help='Results directory')
     argparser.add_argument('--debug_load', dest='debug_load', action='store_true', help='Load only a small subset of the data')
-    argparser.add_argument('-vw', '--violation_weight', default=0, type=float, help="Weight with which constraint violation get added to the loss function")
+    argparser.add_argument('-w', '--weight', default=0, type=float, help="Weight with which constraint violation get added to the loss function")
     argparser.add_argument('-eps', '--epsilon', default=1e-3, type=float, help="Bound below which negative values of violation contribute to loss function")
     argparser.set_defaults(debug_load=False, baseline=True, schedule=False)
 
@@ -42,12 +42,29 @@ def parse_args():
  
     return args
 
-def baseline_loss(divider):
-    def _baseline_loss(ytrue, ypred):
+def mae_loss(divider):
+    def _mae_loss(ytrue, ypred):
         ytrue = ytrue[:,:divider]
         ypred = ypred[:,:divider]
         return K.mean(tf.abs(ytrue - ypred))
-    return _baseline_loss
+    return _mae_loss
+
+def mape_loss(divider):
+    def _mape_loss(ytrue, ypred):
+        ytrue = ytrue[:,:divider]
+        ypred = ypred[:,:divider]
+        return K.mean(tf.divide(tf.abs(ytrue - ypred),ytrue))
+    return _mape_loss
+
+def system_cost(cost, divider, pmax, pmin):
+    def _system_cost(ytrue, ypred):
+        pred_scale = ypred[:,:divider]
+        load = ytrue[:,divider:]
+        pred_gen = scale_to_gen(pred_scale, pmax[1:], pmin[1:])
+        pred_gen = get_slack_bus_gen(pred_gen, load)
+        pred_cost = calculate_cost(pred_gen, cost)
+        return K.mean(pred_cost)
+    return _system_cost
 
 def cost_metric(cost, divider, pmax, pmin):
     def _cost_metric(ytrue, ypred):
@@ -80,8 +97,13 @@ def load_balance(divider, pmax, pmin):
         pred_gen = scale_to_gen(pred_scale, pmax[1:], pmin[1:])
         true_gen = get_slack_bus_gen(true_gen, load)
         pred_gen = get_slack_bus_gen(pred_gen, load)
-        return K.mean(tf.reduce_sum(true_gen, axis=1)-tf.reduce_sum(pred_gen, axis=1))
+        return K.max(tf.reduce_sum(true_gen, axis=1)-tf.reduce_sum(pred_gen, axis=1))
     return _load_balance
+
+def combined_loss(cost, divider, pmax, pmin, weight):
+    def _combined_loss(ytrue, ypred):
+        return (1-weight)*mae_loss(divider)(ytrue, ypred)+weight*cost_metric(cost, divider, pmax, pmin)(ytrue, ypred)
+    return _combined_loss
 
 def main():
 
@@ -92,7 +114,7 @@ def main():
     num_epochs       = config.epochs
     batch_size       = config.batch_size
     l2_scale         = config.l2_scale
-    violation_weight = config.violation_weight
+    weight           = config.weight
     eps              = config.epsilon
     res_dir = config.res_dir
     if config.debug_load:
@@ -104,10 +126,10 @@ def main():
 
     if not os.path.isdir(res_dir):
         os.makedirs(res_dir)
-    f = open('{}/summary.txt'.format(config.res_dir), 'w')
+    f = open('{}/summary.txt'.format(res_dir), 'w')
     f.write('##### Summary: #####\n\n')
     f.write('### Hyperparameters: ###\n')
-    f.writelines('\n'.join(['Random Key: {}'.format(config.key), 'Learning Rate: {}'.format(learning_rate), 'Batch Size: {}'.format(batch_size), 'L2 Scale: {}'.format(l2_scale), 'Violation Weight: {}'.format(violation_weight)]))
+    f.writelines('\n'.join(['Random Key: {}'.format(config.key), 'Learning Rate: {}'.format(learning_rate), 'Batch Size: {}'.format(batch_size), 'L2 Scale: {}'.format(l2_scale), 'Weight: {}'.format(weight)]))
     f.close()
     print('Hyperparameters:\n Learning Rate: {}\n Number of Epochs: {}\n Batch Size: {}\n L2 Scale: {}\n'.format(learning_rate, num_epochs, batch_size, l2_scale))
 
@@ -133,30 +155,30 @@ def main():
 
     '''Plot generator distributions'''
     rows, cols = find_factors(gen.shape[1])
-    fig, axs = plt.subplots(rows, cols, figsize=(cols*2,rows*2.5))
+    fig, axs = plt.subplots(rows, cols, figsize=(cols*4,rows*4))
     axs = axs.flatten()
     for i, ax in enumerate(axs):
         ax.hist(gen[:,i], bins=20, histtype="step", color="blue")
         ax.set_title("Generator {}".format(i+1))
 
-    fig.savefig("{}/generators.png".format(res_dir), bbox_inches="tight")
+    fig.savefig("{}/generators.png".format(res_dir), bbox_inches="tight", dpi=300)
 
     '''Plot cost distribution'''
     fig = plt.figure()
 
     plt.hist(calculate_cost(gen, cost), bins=20, color="blue", histtype="step")
 
-    fig.savefig("{}/costs.png".format(res_dir))
+    fig.savefig("{}/costs.png".format(res_dir), dpi=300)
 
     '''Plot load distributions'''
     rows, cols = find_factors(active_load.shape[1])
-    fig, axs = plt.subplots(rows, cols, figsize=(cols*2,rows*2.5))
+    fig, axs = plt.subplots(rows, cols, figsize=(cols*4,rows*4))
     axs = axs.flatten()
     for i, ax in enumerate(axs):
         ax.hist(active_load[:,i], bins=20, histtype="step", color="blue")
         ax.set_title("Load {}".format(i+1))
 
-    fig.savefig("{}/loads.png".format(res_dir), bbox_inches="tight")
+    fig.savefig("{}/loads.png".format(res_dir), bbox_inches="tight", dpi=300)
 
     print("Preparing data for training...")
 
@@ -179,23 +201,23 @@ def main():
 
     '''Plot generator distributions'''
     rows, cols = find_factors(scales_train.shape[1])
-    fig, axs = plt.subplots(rows, cols, figsize=(cols*2,rows*2.5))
+    fig, axs = plt.subplots(rows, cols, figsize=(cols*4,rows*4))
     axs = axs.flatten()
     for i, ax in enumerate(axs):
         ax.hist(scales_train[:,i], bins=20, histtype="step", color="blue")
         ax.set_title("Generator {}".format(i+1))
 
-    fig.savefig("{}/generators_scaled.png".format(res_dir), bbox_inches="tight")
+    fig.savefig("{}/generators_scaled.png".format(res_dir), bbox_inches="tight", dpi=300)
 
     '''Plot load distributions'''
     rows, cols = find_factors(input_train.shape[1])
-    fig, axs = plt.subplots(rows, cols, figsize=(cols*2,rows*2.5))
+    fig, axs = plt.subplots(rows, cols, figsize=(cols*4,rows*4))
     axs = axs.flatten()
     for i, ax in enumerate(axs):
         ax.hist(input_train[:,i], bins=20, histtype="step", color="blue")
         ax.set_title("Load {}".format(i+1))
 
-    fig.savefig("{}/loads_scaled.png".format(res_dir), bbox_inches="tight")
+    fig.savefig("{}/loads_scaled.png".format(res_dir), bbox_inches="tight", dpi=300)
 
     print("Starting training...")
 
@@ -207,7 +229,7 @@ def main():
     model.add(tf.keras.layers.Dense(units=256, activation='relu', kernel_regularizer=tf.keras.regularizers.L2(l2=l2_scale)))
     model.add(tf.keras.layers.Dense(units=output_train.shape[1], activation='sigmoid'))
     opt = tf.keras.optimizers.Adam(learning_rate=learning_rate)
-    model.compile(loss=baseline_loss(divider), optimizer=opt, metrics=[baseline_loss(divider), cost_metric(cost, divider, pmax, pmin), slack_bus_violation(divider, pmax, pmin), load_balance(divider, pmax, pmin)])
+    model.compile(loss=cost_metric(cost, divider, pmax, pmin), optimizer=opt, metrics=[mae_loss(divider), mape_loss(divider), cost_metric(cost, divider, pmax, pmin), system_cost(cost, divider, pmax, pmin), slack_bus_violation(divider, pmax, pmin), load_balance(divider, pmax, pmin)])
     hist = model.fit(input_train, output_train, verbose=1, epochs=num_epochs, validation_split=0.05, batch_size=batch_size)
     print("Evaluating model...")
 
@@ -216,7 +238,7 @@ def main():
     pred_gen = get_slack_bus_gen(pred_gen, i_test)
     pred_cost = calculate_cost(pred_gen, cost)
 
-    test_loss = model.evaluate(input_test, output_test)
+    test_loss, test_mae, test_mape, test_cost_metric, test_system_cost, test_slack_violation, test_balance  = model.evaluate(input_test, output_test)
 
     print("Saving & plotting results")
 
@@ -225,11 +247,11 @@ def main():
     plt.plot(hist.history["loss"], label="Train Loss")
     plt.plot(hist.history["val_loss"], label="Validation Loss")
     plt.legend(loc=1)
-    fig.savefig("{}/loss.png".format(res_dir))
+    fig.savefig("{}/loss.png".format(res_dir), dpi=300)
 
     '''Plotting generator distributions'''
     rows, cols = find_factors(pred_gen.shape[1])
-    fig, axs = plt.subplots(rows, cols, figsize=(cols*2,rows*2.5))
+    fig, axs = plt.subplots(rows, cols, figsize=(cols*4,rows*4))
     axs = axs.flatten()
 
     for i, ax in enumerate(axs):
@@ -239,7 +261,7 @@ def main():
         if i == 0:
             ax.legend(loc=(-1.5,0.6))
 
-    fig.savefig("{}/gen_predictions.png".format(res_dir), bbox_inches="tight")
+    fig.savefig("{}/gen_predictions.png".format(res_dir), bbox_inches="tight", dpi=300)
 
     '''Plotting cost distribution'''
 
@@ -247,7 +269,7 @@ def main():
     plt.hist(test_cost, bins=20, histtype="step", label="True", linestyle="--", color="red")
     plt.hist(pred_cost, bins=20, histtype="step", label="Prediction", linestyle="--", color="blue")
     plt.legend(loc=1)
-    fig.savefig("{}/pred_cost.png".format(res_dir))
+    fig.savefig("{}/pred_cost.png".format(res_dir), dpi=300)
 
     '''Plotting example generator dispatches'''
 
@@ -261,11 +283,23 @@ def main():
         ax.set_title("Sample {}".format(idx[i]))
         if i == 2:
             ax.legend(loc=(1.1,0.6))
-    fig.savefig("{}/dispatch_examples.png".format(res_dir))
+    fig.savefig("{}/dispatch_examples.png".format(res_dir), dpi=300)
 
     np.save('{}/train_loss.npy'.format(res_dir), hist.history["loss"])
+    np.save('{}/train_mae.npy'.format(res_dir), hist.history["_mae_loss"])
+    np.save('{}/train_mape.npy'.format(res_dir), hist.history["_mape_loss"])
+    np.save('{}/train_cost_metric.npy'.format(res_dir), hist.history["_cost_metric"])
+    np.save('{}/train_system_cost.npy'.format(res_dir), hist.history["_system_cost"])
+    np.save('{}/train_slack_violation.npy'.format(res_dir), hist.history["_slack_bus_violation"])
+    np.save('{}/train_balance.npy'.format(res_dir), hist.history["_load_balance"])
     np.save('{}/val_loss.npy'.format(res_dir), hist.history["val_loss"])
     np.save("{}/test_loss.npy".format(res_dir), test_loss)
+    np.save("{}/test_mae.npy".format(res_dir), test_mae)
+    np.save("{}/test_mape.npy".format(res_dir), test_mape)
+    np.save("{}/test_cost_metric.npy".format(res_dir), test_cost_metric)
+    np.save("{}/test_system_cost.npy".format(res_dir), test_system_cost)
+    np.save("{}/test_slack_violation.npy".format(res_dir), test_slack_violation)
+    np.save("{}/test_balance.npy".format(res_dir), test_balance)
     np.save("{}/predicted_generation.npy".format(res_dir), pred_gen)
     np.save("{}/load.npy".format(res_dir), i_test)
     np.save("{}/true_generation.npy".format(res_dir), o_test)
