@@ -120,9 +120,12 @@ def main():
     active_load = np.delete(load, np.argwhere(np.all(load[..., :] == 0, axis=0)), axis=1)
     cost=np.array(data["cost"])
     gen=np.array(data["generator_samples"])
+    non_active = np.argwhere(np.all(gen[..., :] <= 1e-2, axis=0))
+    gen = np.delete(gen, non_active, axis=1)
+    cost = np.delete(cost, non_active, axis=0)
     divider = gen.shape[1]-1
-    pmin=np.array(data["pmin"])
-    pmax=np.array(data["pmax"])
+    pmin=np.delete(np.array(data["pmin"]), non_active, axis=0)
+    pmax=np.delete(np.array(data["pmax"]), non_active, axis=0)
     base_load=np.array(data["load"])
     #true_costs = np.array(data["objective"])
     x= data["sampling_range"]
@@ -199,9 +202,9 @@ def main():
     tf.keras.backend.set_floatx('float64')
     model = tf.keras.Sequential()
     model.add(tf.keras.Input(shape=(input_train.shape[1],)))
-    model.add(tf.keras.layers.Dense(units=128, activation='relu', kernel_regularizer=tf.keras.regularizers.L2(l2=l2_scale)))
-    model.add(tf.keras.layers.Dense(units=128, activation='relu', kernel_regularizer=tf.keras.regularizers.L2(l2=l2_scale)))
-    model.add(tf.keras.layers.Dense(units=128, activation='relu', kernel_regularizer=tf.keras.regularizers.L2(l2=l2_scale)))
+    model.add(tf.keras.layers.Dense(units=256, activation='relu', kernel_regularizer=tf.keras.regularizers.L2(l2=l2_scale)))
+    model.add(tf.keras.layers.Dense(units=256, activation='relu', kernel_regularizer=tf.keras.regularizers.L2(l2=l2_scale)))
+    model.add(tf.keras.layers.Dense(units=256, activation='relu', kernel_regularizer=tf.keras.regularizers.L2(l2=l2_scale)))
     model.add(tf.keras.layers.Dense(units=output_train.shape[1], activation='sigmoid'))
     opt = tf.keras.optimizers.Adam(learning_rate=learning_rate)
     model.compile(loss=baseline_loss(divider), optimizer=opt, metrics=[baseline_loss(divider), cost_metric(cost, divider, pmax, pmin), slack_bus_violation(divider, pmax, pmin), load_balance(divider, pmax, pmin)])
@@ -233,8 +236,8 @@ def main():
         ax.hist(pred_gen[:,i], bins=20, histtype="step", label="Prediction", linestyle="--", color="blue")
         ax.hist(o_test[:,i], bins=20, histtype="step", label="True", linestyle="--", color="red")
         ax.set_title("Generator {}".format(i+1))
-        if i ==2:
-            ax.legend(loc=(1.1,0.6))
+        if i == 0:
+            ax.legend(loc=(-1.5,0.6))
 
     fig.savefig("{}/gen_predictions.png".format(res_dir), bbox_inches="tight")
 
@@ -245,6 +248,20 @@ def main():
     plt.hist(pred_cost, bins=20, histtype="step", label="Prediction", linestyle="--", color="blue")
     plt.legend(loc=1)
     fig.savefig("{}/pred_cost.png".format(res_dir))
+
+    '''Plotting example generator dispatches'''
+
+    fig, axs = plt.subplots(3,3, figsize = (20,15))
+
+    axs = axs.flatten()
+    idx = np.random.randint(0, len(pred_gen), len(axs))
+    for i, ax in enumerate(axs):
+        ax.bar(np.arange(o_test.shape[1])-0.1, o_test[idx[i]], width=0.2, label="Truth")
+        ax.bar(np.arange(o_test.shape[1])+0.1, pred_gen[idx[i]],width=0.2, label="Prediction")
+        ax.set_title("Sample {}".format(idx[i]))
+        if i == 2:
+            ax.legend(loc=(1.1,0.6))
+    fig.savefig("{}/dispatch_examples.png".format(res_dir))
 
     np.save('{}/train_loss.npy'.format(res_dir), hist.history["loss"])
     np.save('{}/val_loss.npy'.format(res_dir), hist.history["val_loss"])
