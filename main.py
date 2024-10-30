@@ -160,6 +160,7 @@ def main():
     for i, ax in enumerate(axs):
         ax.hist(gen[:,i], bins=20, histtype="step", color="blue")
         ax.set_title("Generator {}".format(i+1))
+        ax.set_xlabel("Dispatch / MW")
 
     fig.savefig("{}/generators.png".format(res_dir), bbox_inches="tight", dpi=300)
 
@@ -167,6 +168,7 @@ def main():
     fig = plt.figure()
 
     plt.hist(calculate_cost(gen, cost), bins=20, color="blue", histtype="step")
+    plt.xlabel("System Cost / [$/h]")
 
     fig.savefig("{}/costs.png".format(res_dir), dpi=300)
 
@@ -177,6 +179,7 @@ def main():
     for i, ax in enumerate(axs):
         ax.hist(active_load[:,i], bins=20, histtype="step", color="blue")
         ax.set_title("Load {}".format(i+1))
+        ax.set_xlabel("Demand / MW")
 
     fig.savefig("{}/loads.png".format(res_dir), bbox_inches="tight", dpi=300)
 
@@ -229,7 +232,7 @@ def main():
     model.add(tf.keras.layers.Dense(units=256, activation='relu', kernel_regularizer=tf.keras.regularizers.L2(l2=l2_scale)))
     model.add(tf.keras.layers.Dense(units=output_train.shape[1], activation='sigmoid'))
     opt = tf.keras.optimizers.Adam(learning_rate=learning_rate)
-    model.compile(loss=cost_metric(cost, divider, pmax, pmin), optimizer=opt, metrics=[mae_loss(divider), mape_loss(divider), cost_metric(cost, divider, pmax, pmin), system_cost(cost, divider, pmax, pmin), slack_bus_violation(divider, pmax, pmin), load_balance(divider, pmax, pmin)])
+    model.compile(loss=mae_loss(divider), optimizer=opt, metrics=[mae_loss(divider), mape_loss(divider), cost_metric(cost, divider, pmax, pmin), system_cost(cost, divider, pmax, pmin), slack_bus_violation(divider, pmax, pmin), load_balance(divider, pmax, pmin)])
     hist = model.fit(input_train, output_train, verbose=1, epochs=num_epochs, validation_split=0.05, batch_size=batch_size)
     print("Evaluating model...")
 
@@ -258,6 +261,7 @@ def main():
         ax.hist(pred_gen[:,i], bins=20, histtype="step", label="Prediction", linestyle="--", color="blue")
         ax.hist(o_test[:,i], bins=20, histtype="step", label="True", linestyle="--", color="red")
         ax.set_title("Generator {}".format(i+1))
+        ax.set_xlabel("Dispatch / MW")
         if i == 0:
             ax.legend(loc=(-1.5,0.6))
 
@@ -269,6 +273,7 @@ def main():
     plt.hist(test_cost, bins=20, histtype="step", label="True", linestyle="--", color="red")
     plt.hist(pred_cost, bins=20, histtype="step", label="Prediction", linestyle="--", color="blue")
     plt.legend(loc=1)
+    plt.xlabel("System Cost / [$/h]")
     fig.savefig("{}/pred_cost.png".format(res_dir), dpi=300)
 
     '''Plotting example generator dispatches'''
@@ -278,9 +283,10 @@ def main():
     axs = axs.flatten()
     idx = np.random.randint(0, len(pred_gen), len(axs))
     for i, ax in enumerate(axs):
-        ax.bar(np.arange(o_test.shape[1])-0.1, o_test[idx[i]], width=0.2, label="Truth")
-        ax.bar(np.arange(o_test.shape[1])+0.1, pred_gen[idx[i]],width=0.2, label="Prediction")
+        ax.bar(np.arange(o_test.shape[1])-0.1+1, o_test[idx[i]], width=0.2, label="Truth")
+        ax.bar(np.arange(o_test.shape[1])+0.1+1, pred_gen[idx[i]],width=0.2, label="Prediction")
         ax.set_title("Sample {}".format(idx[i]))
+        ax.set_ylabel("Dispatch / MW")
         if i == 2:
             ax.legend(loc=(1.1,0.6))
     fig.savefig("{}/dispatch_examples.png".format(res_dir), dpi=300)
