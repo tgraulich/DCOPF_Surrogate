@@ -192,8 +192,8 @@ def main():
     train_cost = calculate_cost(o_train, cost)
     test_cost = calculate_cost(o_test, cost)
 
-    scales_train = gen_to_output(o_train, pmax, pmin)[:,1:]
-    scales_test = gen_to_output(o_test, pmax, pmin)[:,1:]
+    scales_train = gen_to_scale(o_train, pmax, pmin)[:,1:]
+    scales_test = gen_to_scale(o_test, pmax, pmin)[:,1:]
 
     output_train=np.append(scales_train, i_train, axis=1)
     output_test=np.append(scales_test, i_test, axis=1)
