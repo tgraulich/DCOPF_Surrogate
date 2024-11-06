@@ -1,11 +1,12 @@
 import numpy as np
 import tensorflow as tf
+from copy import copy
 
 def gen_to_scale(gen, pmax, pmin):
     return np.divide(np.subtract(gen,pmin.T),(pmax-pmin).T)
 
 def scale_to_gen(scale, pmax, pmin):
-    return scale*(pmax-pmin)+pmin
+    return tf.math.multiply(scale,(pmax-pmin).reshape(len(pmin)))+pmin.reshape(len(pmin))
 
 def load_to_scale(load, base_load, x):
     return (np.divide(load,base_load.T)-1+x)/(2*x)
@@ -14,13 +15,15 @@ def scale_to_load(scale, base_load, x):
     return base_load*(scale*2*x+1-x)
 
 def get_slack_bus_gen(gen, load):
-    return np.sum(load, axis=1)-np.sum(gen, axis=1)
+    slack = (tf.reduce_sum(load, axis=1, keepdims=True)-tf.reduce_sum(gen, axis=1, keepdims=True))
+    return tf.concat([slack, gen], axis=1)
+def get_slack_bus_gen2(gen, load):
+    slack = (tf.reduce_sum(load, axis=1, keepdims=True)-tf.reduce_sum(gen, axis=1, keepdims=True))
+    return slack
 
 def load_to_input(load, base_load, x):
-    active_load = np.delete(load, np.argwhere(np.all(load[..., :] == 0, axis=0)), axis=1)
-    active_base_load = base_load[np.nonzero(base_load)]
-    assert active_load.shape[1]==len(active_base_load)
-    return load_to_scale(active_load, active_base_load, x)
+    assert load.shape[1]==len(base_load)
+    return load_to_scale(load, base_load, x)
 
 '''def input_to_load(input, base_load, x):
     active_base_load = base_load[np.nonzero(base_load)]
@@ -67,13 +70,16 @@ def fill_gen(gen, pmax):
     return full_gen
 
 def calculate_cost(gen, cost):
-    cost[:,0]=np.sqrt(cost[:,0])
-    total_cost=np.matmul(gen, cost)
-    total_cost[:,0]=np.square(total_cost[:,0])
-    return np.sum(total_cost, axis=1)
-    '''
-    cost[:,0]=tf.sqrt(cost[:,0])
-    first_order = tf.linalg.matmul(gen, cost)[:,1]
-    second_order = tf.square(tf.linalg.matmul(gen, cost)[:,0])
-    total = tf.concat([first_order, second_order], axis=1)
-    return tf.reduce_sum(total, axis=1)'''
+    
+    c1=cost[:,0].reshape(len(cost),1)
+    c0=cost[:,1].reshape(len(cost),1)
+    gen2 = tf.square(gen)
+
+    total_cost=tf.matmul(gen2, c1)+tf.matmul(gen, c0)
+    return tf.squeeze(total_cost)
+
+def find_factors(x):
+    s = np.ceil(np.sqrt(x))
+    for t in range(int(s))[::-1]:
+        if x%t==0:
+            return int(min(t, x/t)), int(max(t, x/t))
