@@ -138,17 +138,19 @@ def main():
 
     data = loadmat(i_dir)
 
-    load=np.array(data["load_samples_full"])
-    active_load = np.delete(load, np.argwhere(np.all(load[..., :] == 0, axis=0)), axis=1)
+    load = np.array(data["load_samples_full"])
+    base_load=np.squeeze(data["load"])
+    non_active_load = np.argwhere(base_load == 0)
+    base_load = np.delete(base_load, non_active_load)
+    load = np.delete(load, non_active_load, axis=1)
     cost=np.array(data["cost"])
     gen=np.array(data["generator_samples"])
-    non_active = np.argwhere(np.all(gen[..., :] <= 1e-2, axis=0))
-    gen = np.delete(gen, non_active, axis=1)
-    cost = np.delete(cost, non_active, axis=0)
+    non_active_gen = np.argwhere(np.all(gen[..., :] <= 1e-2, axis=0))
+    gen = np.delete(gen, non_active_gen, axis=1)
+    cost = np.delete(cost, non_active_gen, axis=0)
     divider = gen.shape[1]-1
-    pmin=np.delete(np.array(data["pmin"]), non_active, axis=0)
-    pmax=np.delete(np.array(data["pmax"]), non_active, axis=0)
-    base_load=np.array(data["load"])
+    pmin=np.delete(np.array(data["pmin"]), non_active_gen, axis=0)
+    pmax=np.delete(np.array(data["pmax"]), non_active_gen, axis=0)
     #true_costs = np.array(data["objective"])
     x= data["sampling_range"]
     print("Plotting Data...")
@@ -173,11 +175,11 @@ def main():
     fig.savefig("{}/costs.png".format(res_dir), dpi=300)
 
     '''Plot load distributions'''
-    rows, cols = find_factors(active_load.shape[1])
+    rows, cols = find_factors(load.shape[1])
     fig, axs = plt.subplots(rows, cols, figsize=(cols*4,rows*4))
     axs = axs.flatten()
     for i, ax in enumerate(axs):
-        ax.hist(active_load[:,i], bins=20, histtype="step", color="blue")
+        ax.hist(load[:,i], bins=20, histtype="step", color="blue")
         ax.set_title("Load {}".format(i+1))
         ax.set_xlabel("Demand / MW")
 
@@ -196,8 +198,8 @@ def main():
     output_train=np.append(scales_train, i_train, axis=1)
     output_test=np.append(scales_test, i_test, axis=1)
 
-    input_train = load_to_input(i_train, base_load, x)
-    input_test = load_to_input(i_test, base_load, x)
+    input_train = load_to_scale(i_train, base_load, x)
+    input_test = load_to_scale(i_test, base_load, x)
     
     print("Input shape: {}, Output shape: {}".format(input_train.shape, output_train.shape))
     print("Plotting scaled data")

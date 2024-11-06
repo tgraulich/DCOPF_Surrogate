@@ -22,10 +22,8 @@ def get_slack_bus_gen2(gen, load):
     return slack
 
 def load_to_input(load, base_load, x):
-    active_load = np.delete(load, np.argwhere(np.all(load[..., :] == 0, axis=0)), axis=1)
-    active_base_load = base_load[np.nonzero(base_load)]
-    assert active_load.shape[1]==len(active_base_load)
-    return load_to_scale(active_load, active_base_load, x)
+    assert load.shape[1]==len(base_load)
+    return load_to_scale(load, base_load, x)
 
 '''def input_to_load(input, base_load, x):
     active_base_load = base_load[np.nonzero(base_load)]
